@@ -19,6 +19,14 @@ def pool_ff_interpreter(
             in_channels=int(act.get_shape()[-1]),
             out_channels=out_channels,
             name=it_name)
+    elif it_neuron_op == '1x1conv':
+        self, act, weights = conv_layer(
+            self=self,
+            bottom=act,
+            in_channels=int(act.get_shape()[-1]),
+            out_channels=out_channels,
+            name=it_name,
+            filter_size=1)
     elif it_neuron_op == 'sparse_pool':
         self, act, weights = sparse_pool_layer(
             self=self,
@@ -49,6 +57,29 @@ def fc_layer(self, bottom, out_channels, name, in_channels=None):
         fc = tf.nn.bias_add(tf.matmul(x, weights), biases)
 
         return self, fc, {'weights': weights}
+
+
+def conv_layer(
+        self,
+        bottom,
+        in_channels,
+        out_channels,
+        name,
+        filter_size=3,
+        batchnorm=None):
+    with tf.variable_scope(name):
+        filt, conv_biases = self.get_conv_var(
+            filter_size, in_channels, out_channels, name)
+
+        conv = tf.nn.conv2d(bottom, filt, [1, 1, 1, 1], padding='SAME')
+        bias = tf.nn.bias_add(conv, conv_biases)
+        relu = tf.nn.relu(bias)
+
+        if batchnorm is not None:
+            if name in batchnorm:
+                relu = self.batchnorm(relu)
+
+        return self, relu, {'reduce_weights': filt}
 
 
 def sparse_pool_layer(

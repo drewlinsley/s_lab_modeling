@@ -21,20 +21,14 @@ class Config(object):
         }
 
         # Model parameters
-        self.img_shape = [224, 224, 3]
         self.lesions = [None]
-        self.reduce_features = 100
-        self.num_epochs = 5
         self.batch_size = 10
         self.loss_type = 'l2'
         self.lr = 3e-4
         self.optimizer = 'adam'
         self.metric = 'pearson'
-        # self.cv = {
-        #     'k_fold': 1  # 8
-        # }
         self.cv = {
-            'hold_out': 0.9  # 8
+            'k_fold': 1  # 8
         }
 
         # Contextual model weight decay
@@ -66,10 +60,6 @@ class Config(object):
             'channel_weights': {
                 'type': 'l2',
                 'strength': 1.
-            },
-            'reduce_weights': {
-                'type': 'l1',
-                'strength': 0.1
             }
         }
 

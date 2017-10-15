@@ -65,27 +65,25 @@ def extract_vgg_features(
     print '-' * 60
 
     # 4. Prepare data on CPU
-    batch_size = config.batch_size
-    img_shape = [224, 224, 3]  # list(images.shape)
     neural_shape = list(neural_data.shape)
     num_neurons = neural_shape[-1]
     with tf.device('/cpu:0'):
         train_images = tf.placeholder(
             dtype=dtype,
             name='train_images',
-            shape=[batch_size] + img_shape)
+            shape=[config.batch_size] + config.img_shape)
         train_neural = tf.placeholder(
             dtype=dtype,
             name='train_neural',
-            shape=[batch_size] + [num_neurons])
+            shape=[config.batch_size] + [num_neurons])
         val_images = tf.placeholder(
             dtype=dtype,
             name='val_images',
-            shape=[batch_size] + img_shape)
+            shape=[config.batch_size] + config.img_shape)
         val_neural = tf.placeholder(
             dtype=dtype,
             name='val_neural',
-            shape=[batch_size] + [num_neurons])
+            shape=[config.batch_size] + [num_neurons])
 
     # 5. Prepare model on GPU
     with tf.device('/gpu:0'):
@@ -101,6 +99,19 @@ def extract_vgg_features(
 
             # Select a layer
             activities = vgg[layer_name]
+
+            # Feature reduce with a 1x1 conv
+            if config.reduce_features is not None:
+                vgg, activities, reduce_weights = ff.pool_ff_interpreter(
+                    self=vgg,
+                    it_neuron_op='1x1conv',
+                    act=activities,
+                    it_name='feature_reduce',
+                    out_channels=config.reduce_features,
+                    aux=None)
+            else:
+                reduce_weights = None
+            
 
             # Add con-model if requested
             if cm_type is not None:
@@ -125,10 +136,16 @@ def extract_vgg_features(
                 aux=output_aux)
 
             # Prepare the loss function
-            loss = loss_utils.loss_interpreter(
+            loss, _ = loss_utils.loss_interpreter(
                 logits=output_activities,
                 labels=train_neural,
                 loss_type=config.loss_type)
+
+            # Add contextual model WD
+            if config.reduce_features is not None and reduce_weights is not None:
+                loss += loss_utils.add_wd(
+                    weights=reduce_weights,
+                    wd_dict=config.wd_types)
 
             # Add contextual model WD
             if config.cm_wd_types is not None and cm_weights is not None:
@@ -174,6 +191,18 @@ def extract_vgg_features(
             # Select a layer
             val_activities = val_vgg[layer_name]
 
+            # Add feature reduction if requested
+            if config.reduce_features is not None:
+                val_vgg, val_activities, _ = ff.pool_ff_interpreter(
+                    self=val_vgg,
+                    it_neuron_op='1x1conv',
+                    act=val_activities,
+                    it_name='feature_reduce',
+                    out_channels=config.reduce_features,
+                    aux=None)
+            else:
+                reduce_weights = None
+
             # Add con-model if requested
             if cm_type is not None:
                 val_activities, _, _ = norms[cm_type](
@@ -184,20 +213,27 @@ def extract_vgg_features(
                     lesions=config.lesions)
 
             # Create output layer for N-recording channels
-            vgg, val_output_activities, _ = ff.pool_ff_interpreter(
-                self=vgg,
+            val_vgg, val_output_activities, _ = ff.pool_ff_interpreter(
+                self=val_vgg,
                 it_neuron_op=output_type,
                 act=val_activities,
                 it_name='output',
                 out_channels=num_neurons,
                 aux=output_aux)
 
+            # Prepare the loss function
+            val_loss, _ = loss_utils.loss_interpreter(
+                logits=val_output_activities,
+                labels=val_neural,
+                loss_type=config.loss_type)
+
             # Calculate metrics
             val_accuracy = eval_metrics.metric_interpreter(
                 metric=config.metric,
                 pred=val_output_activities,
                 labels=val_neural)
-            tf.summary.scalar("validation accuracy", val_accuracy)
+            tf.summary.scalar('validation loss', val_loss)
+            tf.summary.scalar('validation accuracy', val_accuracy)
 
     # Set up summaries and saver
     saver = tf.train.Saver(tf.global_variables())
@@ -214,6 +250,20 @@ def extract_vgg_features(
     summary_writer = tf.summary.FileWriter(summary_dir, sess.graph)
 
     # Start training loop
+    train_vars = {
+        'images': train_images,
+        'neural_data': train_neural,
+        'loss': loss,
+        'score': train_accuracy,
+        'train_op': train_op,
+        'weights': cm_weights 
+    }
+    val_vars = {
+        'images': val_images,
+        'neural_data': val_neural,
+        'loss': val_loss,
+        'score': val_accuracy,
+    }
     extra_params = {
         'cm_type': cm_type,
         'layer_name': layer_name,
@@ -231,15 +281,14 @@ def extract_vgg_features(
         config=config,
         neural_data=neural_data,
         images=images,
+        target_size=config.img_shape[:2],
         sess=sess,
-        train_op=train_op,
+        train_vars=train_vars,
+        val_vars=val_vars,
         summary_op=summary_op,
         summary_writer=summary_writer,
-        loss=loss,
         checkpoint_dir=checkpoint_dir,
         summary_dir=summary_dir,
-        val_accuracy=val_accuracy,
-        train_accuracy=train_accuracy,
         saver=saver)
 
 
