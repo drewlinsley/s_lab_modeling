@@ -75,6 +75,43 @@ def check_early_stop(
     return early_stop
 
 
+def cv_interpret(X, y, cv):
+    """Prepare CV indices."""
+    cv_type = cv.keys()[0]
+    cv_val = cv.values()[0]
+    if cv_type == 'k_fold':
+        obs = len(y)
+        rep_val = obs / cv_val
+        assert rep_val == np.round(rep_val),\
+            'Choose a k-fold that is evenly divisible with %s.' % obs
+        cv_seed = np.eye(cv_val)
+        folds = [
+            np.expand_dims(x, -1).repeat(rep_val, axis=0)
+            for x in cv_seed]
+    else:
+        raise NotImplementedError
+
+    # Prepare CV data
+    out_folds = {}
+    for fold in folds:
+        fold = fold.squeeze()
+        it_val = {}
+        val_X = X[fold == 1]
+        val_y = y[fold == 1]
+        it_val['X'] = val_X
+        it_val['y'] = val_y
+        it_train = {}
+        train_X = X[fold == 0]
+        train_y = y[fold == 0]
+        it_train['X'] = train_X
+        it_train['y'] = train_y
+        out_folds[fold] = {
+            'val': it_val,
+            'train': it_train
+        }
+    return out_folds
+
+
 def training_loop(
         config,
         neural_data,
@@ -94,9 +131,14 @@ def training_loop(
     train_losses, train_accs, timesteps = {}, {}, {}
     val_losses, val_accs = {}, {}
     start_time = time.time()
-    num_batches = np.floor(
-        len(combined_files) / float(
-            config.validation_batch)).astype(int)
+
+    # Prepare crossval
+    cv_folds = cv_interpret(
+        X=images,
+        y=neural_data,
+        cv=config.cv)
+
+    import ipdb; ipdb.set_trace()
     for image_batch, label_batch, file_batch in tqdm(
             image_batcher(
                 start=0,

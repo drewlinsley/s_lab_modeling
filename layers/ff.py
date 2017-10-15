@@ -13,14 +13,14 @@ def pool_ff_interpreter(
     """Wrapper for FF and pooling functions."""
     assert out_channels is not None, 'How mny output units do you need?'
     if it_neuron_op == 'fc':
-        self, act = fc_layer(
+        self, act, weights = fc_layer(
             self=self,
             bottom=act,
             in_channels=int(act.get_shape()[-1]),
             out_channels=out_channels,
             name=it_name)
     elif it_neuron_op == 'sparse_pool':
-        self, act = sparse_pool_layer(
+        self, act, weights = sparse_pool_layer(
             self=self,
             bottom=act,
             in_channels=int(act.get_shape()[-1]),
@@ -30,9 +30,8 @@ def pool_ff_interpreter(
     elif it_neuron_op == 'pass':
         pass
     else:
-        raise RuntimeError(
-            'Your specified operation %s is not implemented' % it_neuron_op)
-    return self, act
+        raise NotImplementedError(it_neuron_op)
+    return self, act, weights
 
 
 def fc_layer(self, bottom, out_channels, name, in_channels=None):
@@ -49,7 +48,7 @@ def fc_layer(self, bottom, out_channels, name, in_channels=None):
         x = tf.reshape(bottom, [-1, in_channels])
         fc = tf.nn.bias_add(tf.matmul(x, weights), biases)
 
-        return self, fc
+        return self, fc, {'weights': weights}
 
 
 def sparse_pool_layer(
@@ -103,7 +102,9 @@ def sparse_pool_layer(
         spatial_sparse = tf.reduce_mean(
             bottom * spatial_weights, reduction_indices=[1, 2])
         output = tf.matmul(spatial_sparse, channel_weights)
-        return self, output
+        return self, output, {
+            'spatial_weights': spatial_weights,
+            'channel_weights': channel_weights}
 
 
 def get_conv_var(

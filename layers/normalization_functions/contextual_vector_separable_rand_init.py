@@ -16,7 +16,7 @@ class ContextualCircuit(object):
             X,
             model_version='full',
             timesteps=1,
-            lesions=[None],
+            lesions=None,
             SRF=1,
             SSN=9,
             SSF=29,
@@ -37,12 +37,12 @@ class ContextualCircuit(object):
 
         self.SSN_ext = 2 * py_utils.ifloor(SSN / 2.0) + 1
         self.SSF_ext = 2 * py_utils.ifloor(SSF / 2.0) + 1
-        self.q_shape = [self.SRF, self.SRF, self.k, self.k]
-        self.u_shape = [self.SRF, self.SRF, self.k, 1]
-        self.p_shape = [self.SSN_ext, self.SSN_ext, self.k, self.k]
-        self.t_shape = [self.SSF_ext, self.SSF_ext, self.k, self.k]
-        self.i_shape = self.q_shape
-        self.o_shape = self.q_shape
+        self.q_shape = [self.SRF, self.SRF, 1, self.k]
+        self.u_shape = [self.SRF, self.SRF, 1, 1]
+        self.p_shape = [self.SSN_ext, self.SSN_ext, 1, self.k]
+        self.t_shape = [self.SSF_ext, self.SSF_ext, 1, self.k]
+        self.i_shape = [self.SRF, self.SRF, self.k, self.k]
+        self.o_shape = [self.SRF, self.SRF, self.k, self.k]
         self.u_nl = tf.identity
         self.t_nl = tf.identity
         self.q_nl = tf.identity
@@ -318,10 +318,10 @@ class ContextualCircuit(object):
         else:
             weights = self[weight_key]
         activities = tf.nn.conv2d(
-            data,
-            weights,
-            self.strides,
-            padding=self.padding)
+                data,
+                weights,
+                self.strides,
+                padding=self.padding)
         if out_key is None:
             return activities
         else:
@@ -422,8 +422,14 @@ class ContextualCircuit(object):
         """Run the backprop version of the CCircuit."""
         self.prepare_tensors()
         i0 = tf.constant(0)
-        O = tf.identity(self.X)
-        I = tf.identity(self.X)
+        I = initialization.xavier_initializer(
+            shape=[self.n, self.h, self.w, self.k],
+            uniform=self.normal_initializer,
+            mask=None))
+        O = initialization.xavier_initializer(
+            shape=[self.n, self.h, self.w, self.k],
+            uniform=self.normal_initializer,
+            mask=None))
 
         if reduce_memory:
             print 'Warning: Using FF version of the model.'

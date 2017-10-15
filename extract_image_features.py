@@ -17,8 +17,8 @@ def extract_vgg_features(
         output_type='sparse_pool',
         project_name=None,
         model_type='vgg16',
-        lesions=None,
-        timesteps=5):
+        timesteps=5,
+        dtype=tf.float32):
     """Main extraction and training script."""
     assert project_name is not None, 'Need a project name.'
 
@@ -36,7 +36,8 @@ def extract_vgg_features(
     # TODO: across_session_data_matrix is subtracted version
     images = data['all_images'].astype(np.float32)
     # TODO: create AUX dict with each channel's X/Y
-    rfs = rf_sizes.get_eRFs(model_type)
+    output_aux = None
+    rfs = rf_sizes.get_eRFs(model_type)[layer_name]
 
     # 3. Create a output directory if necessary and save a timestamped numpy.
     dt_stamp = '%s' % str(datetime.now())[0].replace(
@@ -65,21 +66,26 @@ def extract_vgg_features(
 
     # 4. Prepare data on CPU
     batch_size = config.batch_size
-    import ipdb;ipdb.set_trace()
+    img_shape = [224, 224, 3]  # list(images.shape)
+    neural_shape = list(neural_data.shape)
+    num_neurons = neural_shape[-1]
     with tf.device('/cpu:0'):
         train_images = tf.placeholder(
+            dtype=dtype,
             name='train_images',
-            shape=batch_size + [images.shape[1:]])
+            shape=[batch_size] + img_shape)
         train_neural = tf.placeholder(
+            dtype=dtype,
             name='train_neural',
-            shape=batch_size + [neural_data.shape[-1]])
-        num_neurons = images.shape[1:]
+            shape=[batch_size] + [num_neurons])
         val_images = tf.placeholder(
+            dtype=dtype,
             name='val_images',
-            shape=batch_size + [num_neurons])
+            shape=[batch_size] + img_shape)
         val_neural = tf.placeholder(
+            dtype=dtype,
             name='val_neural',
-            shape=batch_size + [num_neurons])
+            shape=[batch_size] + [num_neurons])
 
     # 5. Prepare model on GPU
     with tf.device('/gpu:0'):
@@ -90,52 +96,51 @@ def extract_vgg_features(
             vgg.build(
                 train_images,
                 output_shape=1000,  # hardcode
-                train_mode=train_mode)
+                train_mode=train_mode,
+                final_layer=layer_name)
 
             # Select a layer
             activities = vgg[layer_name]
 
             # Add con-model if requested
             if cm_type is not None:
-                norms = normalizations()
-                activities, cm_weights = norms[cm_type](
+                norms = normalizations.normalizations()
+                activities, cm_weights, _ = norms[cm_type](
                     x=activities,
                     r_in=rfs['r_in'],
                     j_in=rfs['j_in'],
                     timesteps=timesteps,
-                    lesions=lesions)
+                    lesions=config.lesions)
             else:
                 cm_weights = None
 
             # Create output layer for N-recording channels
-            output_activities, output_weights = ff.pool_ff_interpreter(
+            activities = tf.nn.dropout(activities, 0.5)
+            vgg, output_activities, output_weights = ff.pool_ff_interpreter(
+                self=vgg,
                 it_neuron_op=output_type,
                 act=activities,
                 it_name='output',
                 out_channels=num_neurons,
-                aux=None)
+                aux=output_aux)
 
             # Prepare the loss function
-            loss = loss_utils.optimizer_interpreter(
-                output_activities,
-                train_neural,
+            loss = loss_utils.loss_interpreter(
+                logits=output_activities,
+                labels=train_neural,
                 loss_type=config.loss_type)
 
             # Add contextual model WD
-            if cm_weights is not None:
+            if config.cm_wd_types is not None and cm_weights is not None:
                 loss += loss_utils.add_wd(
-                    loss=loss,
                     weights=cm_weights,
-                    wd_type=config.cm_wd_types,
-                    wd_scale=config.cm_wd_scales)
+                    wd_dict=config.cm_wd_types)
 
-            # Add weight decay on output layer
-            if config.wd_penalty is not None:
+            # Add WD to output layer
+            if config.wd_types is not None:
                 loss += loss_utils.add_wd(
-                    loss=loss,
                     weights=output_weights,
-                    wd_type=config.output_wd_types,
-                    wd_scale=config.output_wd_scales)
+                    wd_dict=config.wd_types)
 
             # Finetune the learning rates
             train_op = loss_utils.optimizer_interpreter(
@@ -160,27 +165,33 @@ def extract_vgg_features(
 
             # Validation graph is the same as training except no batchnorm
             val_vgg = vgg16.Vgg16(
-                vgg16_npy_path=config.vgg16_weight_path,
-                fine_tune_layers=config.fine_tune_layers)
+                vgg16_npy_path=config.vgg16_weight_path)
             val_vgg.build(
                 val_images,
-                output_shape=1000)  # hardcode
+                output_shape=1000,
+                final_layer=layer_name)
 
             # Select a layer
             val_activities = val_vgg[layer_name]
 
             # Add con-model if requested
             if cm_type is not None:
-                val_activities, _ = norms[config.cm_type](
-                    val_activities)
+                val_activities, _, _ = norms[cm_type](
+                    x=val_activities,
+                    r_in=rfs['r_in'],
+                    j_in=rfs['j_in'],
+                    timesteps=timesteps,
+                    lesions=config.lesions)
 
             # Create output layer for N-recording channels
-            val_output_activities, _ = ff.pool_ff_interpreter(
+            vgg, val_output_activities, _ = ff.pool_ff_interpreter(
+                self=vgg,
                 it_neuron_op=output_type,
                 act=val_activities,
-                it_name='val_output',
+                it_name='output',
                 out_channels=num_neurons,
-                aux=None)
+                aux=output_aux)
+
             # Calculate metrics
             val_accuracy = eval_metrics.metric_interpreter(
                 metric=config.metric,
@@ -209,7 +220,7 @@ def extract_vgg_features(
         'output_type': output_type,
         'project_name': project_name,
         'model_type': model_type,
-        'lesions': lesions,
+        'lesions': config.lesions,
         'timesteps': timesteps
     }
     np.savez(

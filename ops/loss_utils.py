@@ -1,6 +1,59 @@
 """Functions for losses and metrics."""
-
+import numpy as np
 import tensorflow as tf
+
+
+def add_wd(weights, wd_dict):
+    """Derive weight decay regularizations."""
+    losses = []
+    for k, v in wd_dict.iteritems():
+        if k in weights.keys():
+            wd_type = v['type']
+            wd_strength = v['strength']
+            print 'Adding %s weight decay, lambda = %s, for: %s' % (
+                wd_type,
+                wd_strength,
+                k)
+            if wd_type == 'l2':
+                losses += [tf.nn.l2_loss(weights[k]) * wd_strength]
+            elif wd_type == 'laplace_l2':
+                losses += [tf.nn.l2_loss(laplacian(weights[k])) * wd_strength]
+            elif wd_type == 'laplace_l1':
+                losses += [l1_loss(laplacian(weights[k])) * wd_strength]
+            elif wd_type == 'l1':
+                losses += [l1_loss(weights[k]) * wd_strength]
+            else:
+                raise NotImplementedError(k)
+    return tf.add_n(losses)
+
+
+def l1_loss(x):
+    """L1 loss: sum(abs(x))."""
+    return tf.reduce_sum(tf.abs(x))
+
+
+def laplacian(weights, ltype=4):
+    """Convolution with the Laplacian of weights."""
+    if ltype == 4:
+        l = np.asarray(
+            [
+                [0, -1, 0],
+                [-1, 4, -1],
+                [0, -1, 0]
+            ]
+        )
+    elif ltype == 8:
+        l = np.asarray(
+            [
+                [-1, -1, -1],
+                [-1, 8, -1],
+                [-1, -1, -1]
+            ]
+        )
+    else:
+        raise NotImplementedError(ltype)
+    kernel = l[:, :, None, None]
+    return tf.nn.conv2d(weights, kernel, [1, 1, 1, 1], padding='SAME')
 
 
 def optimizer_interpreter(
@@ -18,11 +71,6 @@ def optimizer_interpreter(
         return tf.train.RMSPropOptimizer(lr).minimize(loss)
     else:
         raise RuntimeError('Cannot understand your loss function.')
-
-
-def momentum(loss, lr, momentum=0.9):
-    """Wrapper for SGD with momentum."""
-    tf.train.MomentumOptimizer(lr, momentum=momentum).minimize(loss)
 
 
 def loss_interpreter(
@@ -81,8 +129,12 @@ def cce(logits, labels, weights=None):
         return tf.reduce_mean(
             tf.nn.sparse_softmax_cross_entropy_with_logits(
                 logits=logits,
-                labels=labels)
-            ), tf.nn.softmax(logits)
+                labels=labels)), tf.nn.softmax(logits)
+
+
+def momentum(loss, lr, momentum=0.9):
+    """Wrapper for SGD with momentum."""
+    tf.train.MomentumOptimizer(lr, momentum=momentum).minimize(loss)
 
 
 def l2(logits, labels):
@@ -168,4 +220,3 @@ def pearson_score(x1, x2, shape=None):
 
     corr = cov / (tf.multiply(x1_std, x2_std) + 1e-4)
     return corr
-

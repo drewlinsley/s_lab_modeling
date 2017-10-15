@@ -34,7 +34,7 @@ class normalizations(object):
 
     def calculate_kernel_from_RF(self, j_in, r_in, fix_r_out):
         """Calculate kernel size for a specified RF."""
-        return (fix_r_out / j_in) + 1 - r_in
+        return ((fix_r_out - r_in) / j_in) + 1
 
     def set_RFs(
             self,
@@ -112,4 +112,3 @@ class normalizations(object):
             strides=self.strides,
             padding=self.padding)
         return contextual_layer.build()
-

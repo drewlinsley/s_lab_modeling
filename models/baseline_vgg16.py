@@ -1,15 +1,16 @@
+"""A trainable version VGG16."""
 import numpy as np
 import tensorflow as tf
 
 
 class Vgg16:
-    """
-    A trainable version VGG16.
-    """
+    """Model class."""
 
     def __init__(
-                self, vgg16_npy_path=None, trainable=True,
-                fine_tune_layers=None):
+            self,
+            vgg16_npy_path=None,
+            trainable=True,
+            fine_tune_layers=None):
         if vgg16_npy_path is not None:
             self.data_dict = np.load(vgg16_npy_path, encoding='latin1').item()
             # pop the specified keys from the weights that will be loaded
@@ -30,58 +31,89 @@ class Vgg16:
     def __contains__(self, name):
         return hasattr(self, name)
 
-    def build(self, rgb, output_shape=None, train_mode=None, batchnorm=None):
-        """
-        load variable from npy to build the VGG
+    def model_struct(self):
+        return [
+            'conv1_1',
+            'conv1_2',
+            'pool1',
+            'conv2_1',
+            'conv2_2',
+            'pool2',
+            'conv3_1',
+            'conv3_2',
+            'conv3_3',
+            'pool3',
+            'conv4_1',
+            'conv4_2',
+            'conv4_3',
+            'pool4',
+            'conv5_1',
+            'conv5_2',
+            'conv5_3',
+            'pool5',
+            'fc6',
+            'fc7',
+            'fc8'
+        ]
 
-        :param rgb: rgb image [batch, height, width, 3] values scaled [0, 1]
-        :param train_mode: a bool tensor, usually a placeholder:
-        :if True, dropout will be turned on
-        """
-        if output_shape is None:
-            output_shape = 1000
+    def op_conv1_1(self, x):
+        self.conv1_1 = self.conv_layer(x, 3, 64, "conv1_1")
 
-        rgb_scaled = rgb * 255.0  # Scale up to imagenet's uint8
-
-        # Convert RGB to BGR
-        red, green, blue = tf.split(axis=3, num_or_size_splits=3, value=rgb_scaled)
-        assert red.get_shape().as_list()[1:] == [224, 224, 1]
-        assert green.get_shape().as_list()[1:] == [224, 224, 1]
-        assert blue.get_shape().as_list()[1:] == [224, 224, 1]
-        bgr = tf.concat(axis=3, values=[
-            blue - self.VGG_MEAN[0],
-            green - self.VGG_MEAN[1],
-            red - self.VGG_MEAN[2],
-        ], name='bgr')
-
-        assert bgr.get_shape().as_list()[1:] == [224, 224, 3]
-        input_bgr = tf.identity(bgr, name="lrp_input")
-        self.conv1_1 = self.conv_layer(input_bgr, 3, 64, "conv1_1")
+    def op_conv1_2(self):
         self.conv1_2 = self.conv_layer(self.conv1_1, 64, 64, "conv1_2")
+
+    def op_pool1(self):
         self.pool1 = self.max_pool(self.conv1_2, 'pool1')
 
+    def op_conv2_1(self):
         self.conv2_1 = self.conv_layer(self.pool1, 64, 128, "conv2_1")
+
+    def op_conv2_2(self):
         self.conv2_2 = self.conv_layer(self.conv2_1, 128, 128, "conv2_2")
+
+    def op_pool2(self):
         self.pool2 = self.max_pool(self.conv2_2, 'pool2')
 
+    def op_conv3_1(self):
         self.conv3_1 = self.conv_layer(self.pool2, 128, 256, "conv3_1")
+
+    def op_conv3_2(self):
         self.conv3_2 = self.conv_layer(self.conv3_1, 256, 256, "conv3_2")
+
+    def op_conv3_3(self):
         self.conv3_3 = self.conv_layer(self.conv3_2, 256, 256, "conv3_3")
+
+    def op_pool3(self):
         self.pool3 = self.max_pool(self.conv3_3, 'pool3')
 
+    def op_conv4_1(self):
         self.conv4_1 = self.conv_layer(self.pool3, 256, 512, "conv4_1")
+
+    def op_conv4_2(self):
         self.conv4_2 = self.conv_layer(self.conv4_1, 512, 512, "conv4_2")
+
+    def op_conv4_3(self):
         self.conv4_3 = self.conv_layer(self.conv4_2, 512, 512, "conv4_3")
+
+    def op_pool4(self):
         self.pool4 = self.max_pool(self.conv4_3, 'pool4')
 
+    def op_conv5_1(self):
         self.conv5_1 = self.conv_layer(
-            self.pool4, 512, 512, "conv5_1", batchnorm)
+            self.pool4, 512, 512, "conv5_1")
+
+    def op_conv5_2(self):
         self.conv5_2 = self.conv_layer(
-            self.conv5_1, 512, 512, "conv5_2", batchnorm)
+            self.conv5_1, 512, 512, "conv5_2")
+
+    def op_conv5_3(self):
         self.conv5_3 = self.conv_layer(
-            self.conv5_2, 512, 512, "conv5_3", batchnorm)
+            self.conv5_2, 512, 512, "conv5_3")
+
+    def op_pool5(self):
         self.pool5 = self.max_pool(self.conv5_3, 'pool5')
 
+    def op_fc6(self, train_mode):
         # 25088 = ((224 / (2 ** 5)) ** 2) * 512
         self.fc6 = self.fc_layer(self.pool5, 25088, 4096, "fc6")
         self.relu6 = tf.nn.relu(self.fc6)
@@ -92,10 +124,8 @@ class Vgg16:
                 lambda: tf.nn.dropout(self.relu6, 0.5), lambda: self.relu6)
         elif self.trainable:
             self.relu6 = tf.nn.dropout(self.relu6, 0.5)
-        if batchnorm is not None:
-            if 'fc6' in batchnorm:
-                self.relu6 = self.batchnorm(self.relu6)
 
+    def op_fc7(self, train_mode):
         self.fc7 = self.fc_layer(self.relu6, 4096, 4096, "fc7")
         self.relu7 = tf.nn.relu(self.fc7)
         if train_mode is not None:
@@ -104,36 +134,101 @@ class Vgg16:
                 lambda: tf.nn.dropout(self.relu7, 0.5), lambda: self.relu7)
         elif self.trainable:
             self.relu7 = tf.nn.dropout(self.relu7, 0.5)
-        if batchnorm is not None:
-            if 'fc7' in batchnorm:
-                self.relu7 = self.batchnorm(self.relu7)
 
+    def op_fc8(self, output_shape):
         self.fc8 = self.fc_layer(self.relu7, 4096, output_shape, "fc8")
-        if batchnorm is not None:
-            if 'fc8' in batchnorm:
-                self.fc8 = self.batchnorm(self.fc8)
         final = tf.identity(self.fc8, name="lrp_output")
         self.prob = tf.nn.softmax(final, name="prob")
 
+    def make_model(
+            self,
+            x,
+            train_mode,
+            output_shape,
+            final_layer):
+        """Make the model."""
+        ms = self.model_struct()
+        for l in ms:
+            if l == 'conv1_1':
+                self['op_%s' % l](x=x)
+            elif l == 'fc6' or l == 'fc7':
+                self['op_%s' % l](train_mode=train_mode)
+            elif l == 'fc8':
+                self['op_%s' % l](output_shape=output_shape)
+            else:
+                self['op_%s' % l]()
+            if l == final_layer:
+                return
+
+    def build(
+            self,
+            rgb,
+            output_shape=None,
+            train_mode=None,
+            batchnorm=None,
+            final_layer=None):
+        """
+        load variable from npy to build the VGG
+
+        :param rgb: rgb image [batch, height, width, 3] values scaled [0, 1]
+        :param train_mode: a bool tensor, usually a placeholder:
+        :if True, dropout will be turned on
+        """
+        if output_shape is None:
+            output_shape = 1000
+
+        # Convert RGB to BGR
+        red, green, blue = tf.split(
+            axis=3,
+            num_or_size_splits=3,
+            value=rgb)
+        assert red.get_shape().as_list()[1:] == [224, 224, 1]
+        assert green.get_shape().as_list()[1:] == [224, 224, 1]
+        assert blue.get_shape().as_list()[1:] == [224, 224, 1]
+        bgr = tf.concat(axis=3, values=[
+            blue - self.VGG_MEAN[0],
+            green - self.VGG_MEAN[1],
+            red - self.VGG_MEAN[2],
+        ], name='bgr')
+
+        assert bgr.get_shape().as_list()[1:] == [224, 224, 3]
+
+        self.make_model(
+            x=bgr,
+            train_mode=train_mode,
+            output_shape=output_shape,
+            final_layer=final_layer)
         self.data_dict = None
 
-    def batchnorm(self, layer):
+    def batchnorm(
+            self,
+            layer):
         m, v = tf.nn.moments(layer, [0])
         return tf.nn.batch_normalization(layer, m, v, None, None, 1e-3)
 
-    def avg_pool(self, bottom, name):
+    def avg_pool(
+            self,
+            bottom,
+            name):
         return tf.nn.avg_pool(
             bottom, ksize=[1, 2, 2, 1],
-            strides=[1, 2, 2, 1], padding='SAME', name=name)
+            stri8des=[1, 2, 2, 1], padding='SAME', name=name)
 
-    def max_pool(self, bottom, name):
+    def max_pool(
+            self,
+            bottom,
+            name):
         return tf.nn.max_pool(
             bottom, ksize=[1, 2, 2, 1],
             strides=[1, 2, 2, 1], padding='SAME', name=name)
 
     def conv_layer(
-                    self, bottom, in_channels,
-                    out_channels, name, batchnorm=None):
+            self,
+            bottom,
+            in_channels,
+            out_channels,
+            name,
+            batchnorm=None):
         with tf.variable_scope(name):
             filt, conv_biases = self.get_conv_var(
                 3, in_channels, out_channels, name)
@@ -148,7 +243,12 @@ class Vgg16:
 
             return relu
 
-    def fc_layer(self, bottom, in_size, out_size, name):
+    def fc_layer(
+            self,
+            bottom,
+            in_size,
+            out_size,
+            name):
         with tf.variable_scope(name):
             weights, biases = self.get_fc_var(in_size, out_size, name)
 
@@ -158,8 +258,12 @@ class Vgg16:
             return fc
 
     def get_conv_var(
-            self, filter_size, in_channels, out_channels,
-            name, init_type='xavier'):
+            self,
+            filter_size,
+            in_channels,
+            out_channels,
+            name,
+            init_type='xavier'):
         if init_type == 'xavier':
             weight_init = [
                 [filter_size, filter_size, in_channels, out_channels],
