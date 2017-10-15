@@ -92,7 +92,7 @@ def cv_interpret(X, y, cv):
         raise NotImplementedError
 
     # Prepare CV data
-    out_folds = {}
+    out_folds = []
     for fold in folds:
         fold = fold.squeeze()
         it_val = {}
@@ -105,10 +105,10 @@ def cv_interpret(X, y, cv):
         train_y = y[fold == 0]
         it_train['X'] = train_X
         it_train['y'] = train_y
-        out_folds[fold] = {
+        out_folds += [{
             'val': it_val,
             'train': it_train
-        }
+        }]
     return out_folds
 
 
@@ -139,6 +139,7 @@ def training_loop(
         cv=config.cv)
 
     import ipdb; ipdb.set_trace()
+    for fold in cv_folds:
     for image_batch, label_batch, file_batch in tqdm(
             image_batcher(
                 start=0,

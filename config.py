@@ -28,7 +28,7 @@ class Config(object):
         self.optimizer = 'adam'
         self.metric = 'pearson'
         self.cv = {
-            'k_fold': 8
+            'k_fold': 1  # 8
         }
 
         # Contextual model weight decay
