@@ -17,9 +17,10 @@ def metric_interpreter(metric, pred, labels):
             pred=pred,
             labels=labels)
     elif metric == 'pearson':
-        return pearson_score(
-            pred=pred,
-            labels=labels)
+        return tf.reduce_mean(
+            pearson_score(
+                pred=pred,
+                labels=labels))
     else:
         raise RuntimeError('Cannot understand the dataset metric.')
 

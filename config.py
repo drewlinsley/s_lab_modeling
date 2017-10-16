@@ -24,10 +24,10 @@ class Config(object):
         self.img_shape = [224, 224, 3]
         self.lesions = [None]
         self.reduce_features = 100
-        self.num_epochs = 5
+        self.num_epochs = 30
         self.batch_size = 10
-        self.loss_type = 'l2'
-        self.lr = 3e-4
+        self.loss_type = 'pearson'
+        self.lr = 1e-3
         self.optimizer = 'adam'
         self.metric = 'pearson'
         # self.cv = {

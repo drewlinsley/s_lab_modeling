@@ -175,7 +175,7 @@ def log_loss(logits, labels):
 
 def pearson_loss(logits, labels):
     """Pearson dissimilarity loss."""
-    rhos = 1 - pearson_score(pred=logits, labels=labels)
+    rhos = 1 - pearson_score(x1=logits, x2=labels)
     mean_rhos = tf.reduce_mean(rhos)
     return mean_rhos, rhos
 

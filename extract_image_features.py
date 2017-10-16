@@ -114,7 +114,7 @@ def extract_vgg_features(
             
 
             # Add con-model if requested
-            if cm_type is not None:
+            if cm_type is not None or cm_type != 'none':
                 norms = normalizations.normalizations()
                 activities, cm_weights, _ = norms[cm_type](
                     x=activities,
@@ -204,7 +204,7 @@ def extract_vgg_features(
                 reduce_weights = None
 
             # Add con-model if requested
-            if cm_type is not None:
+            if cm_type is not None or cm_type != 'none':
                 val_activities, _, _ = norms[cm_type](
                     x=val_activities,
                     r_in=rfs['r_in'],
@@ -277,7 +277,7 @@ def extract_vgg_features(
         os.path.join(out_dir, 'training_config_file'),
         config=config,
         extra_params=extra_params)
-    training.training_loop(
+    train_cv_out, val_cv_out, weights = training.training_loop(
         config=config,
         neural_data=neural_data,
         images=images,
@@ -290,6 +290,13 @@ def extract_vgg_features(
         checkpoint_dir=checkpoint_dir,
         summary_dir=summary_dir,
         saver=saver)
+    np.savez(
+        os.path.join(out_dir, 'training_data'),
+        config=config,
+        extra_params=extra_params,
+        train_cv_out=train_cv_out,
+        val_cv_out=val_cv_out,
+        weight=weights)
 
 
 if __name__ == '__main__':

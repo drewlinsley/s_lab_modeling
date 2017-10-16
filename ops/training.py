@@ -181,28 +181,18 @@ def training_loop(
                     train_vars['images']: it_images,
                     train_vars['neural_data']: it_neural_data     
                 }
-                train_data = sess.run(
+                it_train_data = sess.run(
                     train_vars.values(),
                     feed_dict=feed_dict)
-                train_dict = {k: v for k, v in zip(train_vars.keys(), train_data)}
-                import ipdb; ipdb.set_trace()
+                train_dict = {k: v for k, v in zip(train_vars.keys(), it_train_data)}
                 assert not np.any(np.isnan(train_dict['loss'])), 'NaN in loss.'
                 image_count += config.batch_size
                 fold_train_losses[epoch] += [train_dict['loss']]
                 fold_train_scores[epoch] += [train_dict['score']]
                 duration = time.time() - start_time
-                status_string = ('%s, step: %s, training loss: %s, ',
-                    'training score: %s, log dir: %s, '
-                    '(%.1f examples/sec, %.3f sec/batch)' % (
-                        datetime.now(),
-                        image_count // config.batch_size,
-                        float(train_dict['loss']),
-                        float(train_dict['score']),
-                        summary_dir,
-                        config.batch_size / duration,
-                        float(duration)
-                    ))
-                print status_string
+                print 'Training loss: %s, score: %s' % (
+                    float(train_dict['loss']),
+                    float(train_dict['score']))
             # Run validation after every epoch
             image_count = 0
             while image_count < val_num_steps:
@@ -210,28 +200,19 @@ def training_loop(
                 it_images = preprocess_images(val_data['X'][it_inds], target_size)
                 it_neural_data = val_data['y'][it_inds]
                 feed_dict = {
-                    train_vars['images']: it_images,
-                    train_vars['neural_data']: it_neural_data
+                    val_vars['images']: it_images,
+                    val_vars['neural_data']: it_neural_data
                 }
-                val_data = sess.run(
+                it_val_data = sess.run(
                     val_vars.values(),
                     feed_dict=feed_dict)
-                val_dict = {k: v for k, v in zip(val_vars.keys(), val_data)}
+                val_dict = {k: v for k, v in zip(val_vars.keys(), it_val_data)}
                 image_count += config.batch_size
                 fold_val_losses[epoch] += [val_dict['loss']]
                 fold_val_scores[epoch] += [val_dict['score']]
-                status_string = ('VALIDATION: %s, step: %s, val loss: %s, ',
-                    'val score: %s, ckpt dir: %s, '
-                    '(%.1f examples/sec, %.3f sec/batch)' % (
-                        datetime.now(),
-                        image_count // config.batch_size,
-                        float(val_dict['loss']),
-                        float(val_dict['score']),
-                        ckpt_dir,
-                        config.batch_size / duration,
-                        float(duration)
-                    ))
-                print status_string
+                print 'Validation loss: %s, score: %s' % (
+                    float(val_dict['loss']),
+                    float(val_dict['score']))
         train_cv_out += [
             {
                 'losses': fold_train_losses,

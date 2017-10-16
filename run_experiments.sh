@@ -9,11 +9,11 @@ else
 fi
 echo "Developing worker for gpu $gpu."
 
-cm_type=('contextual_vector')
-layer_name=('conv3_3')
-output_type=('sparse_pool')
-project_name=('sheinberg_data_noise_subtracted')
-timesteps=(5)
+cm_type=('contextual_vector' 'contextual_vector_separable' 'contextual_vector_separable_rand_init' 'none')  #  'contextual_vector' 'none')
+layer_name=('conv3_3' 'conv3_3' 'conv3_3' 'conv3_3')  #  'conv3_3' 'conv3_3')
+output_type=('sparse_pool' 'sparse_pool' 'sparse_pool' 'sparse_pool')  #  'sparse_pool' 'sparse_pool')
+project_name=('sheinberg_data' 'sheinberg_data' 'sheinberg_data' 'sheinberg_data')  #  'sheinberg_data_noise_subtracted' 'sheinberg_data_noise_subtracted')  # ('sheinberg_data')
+timesteps=(5 5 5 5)
 
 for ((i=0;i<${#cm_type[@]};i++)); do
 	CUDA_VISIBLE_DEVICES=$gpu python extract_image_features.py --cm_type="${cm_type[i]}" --layer_name="${layer_name[i]}" --output_type="${output_type[i]}" --project_name="${project_name[i]}" --timesteps="${timesteps[i]}"
