@@ -1,138 +1,189 @@
+"""Extract VGG features and fit to neural data."""
 import os
-import re
-import sys
 import tensorflow as tf
 import numpy as np
 from datetime import datetime
-from argparse import ArgumentParser
-from ops.data_loader import inputs
-from ops.tf_fun import make_dir, training_loop
-from ops.loss_utils import softmax_loss, finetune_learning, wd_loss
-from ops.metrics import class_accuracy
-from config import clickMeConfig
+from config import Config
+from ops import loss_utils, eval_metrics, rf_sizes, training
+from layers import normalizations, ff
 from models import baseline_vgg16 as vgg16
-from cluster_db import db
+from utils import py_utils
+from argparse import ArgumentParser
 
 
-def batchnorm(layer):
-    m, v = tf.nn.moments(layer, [0])
-    return tf.nn.batch_normalization(layer, m, v, None, None, 1e-3)
+def extract_vgg_features(
+        cm_type='contextual_vector',
+        layer_name='pool3',
+        output_type='sparse_pool',
+        project_name=None,
+        model_type='vgg16',
+        timesteps=5,
+        dtype=tf.float32):
+    """Main extraction and training script."""
+    assert project_name is not None, 'Need a project name.'
 
+    # 1. Get file paths and load config
+    config = Config()
+    config.cm_type = cm_type
+    project_path = config.projects[project_name]
 
-def min_max(t):
-    mint = tf.reduce_min(t, keep_dims=True)
-    maxt = tf.reduce_max(t, keep_dims=True)
-    return (t - mint) / (maxt - mint)
+    # 2. Assert the model is there and load neural data.
+    print 'Loading preprocessed data...'
+    data = np.load(
+        os.path.join(
+            project_path,
+            '%s.npz' % project_name))
+    neural_data = data['data_matrix']
+    # TODO: across_session_data_matrix is subtracted version
+    images = data['all_images'].astype(np.float32)
 
+    # Remove zeroed columns from neural data
+    channel_check = np.abs(neural_data).sum(0) > 0
+    neural_data = neural_data[:, channel_check]
 
-# Train or finetune a vgg16 while cuing to clickme
-# Train or finetune a vgg16 while cuing to clickme
-def train_vgg16(
-        train_dir=None,
-        validation_dir=None,
-        hp_optim=False):
-    config = clickMeConfig()
-    if hp_optim:
-        hp_params, hp_combo_id = db.get_parameters()
-        if hp_combo_id is None:
-            print 'Exiting.'
-            sys.exit(1)
-        for k, v in hp_params.iteritems():
-            setattr(config, k, v)
+    # TODO: create AUX dict with each channel's X/Y
+    output_aux = None
+    rfs = rf_sizes.get_eRFs(model_type)[layer_name]
 
-    if train_dir is None:  # Use globals
-        train_data = os.path.join(
-            config.tf_record_base, config.tf_train_name)
-        train_meta_name = os.path.join(
-            config.tf_record_base,
-            re.split('.tfrecords', config.tf_train_name)[0] + '_meta.npz')
-        train_meta = np.load(train_meta_name)
-    print 'Using train tfrecords: %s | %s image/heatmap combos' % (
-            [train_data], len(train_meta['labels']))
+    # 3. Create a output directory if necessary and save a timestamped numpy.
+    model_description = '%s_%s_%s_%s_%s_%s' % (
+        cm_type,
+        layer_name,
+        output_type,
+        project_name,
+        model_type,
+        timesteps)
+    dt_stamp = '%s_%s' % (
+        model_description,
+        str(datetime.now()).replace(
+            ' ', '_').replace(
+            ':', '_').replace(
+            '-', '_')
+        )
+    project_dir = os.path.join(
+        config.results,
+        project_name)
+    out_dir = os.path.join(
+        project_dir,
+        dt_stamp)
+    checkpoint_dir = os.path.join(
+        out_dir,
+        'checkpoints')
+    dirs = [
+        config.results,
+        config.summaries,
+        out_dir
+    ]
+    [py_utils.make_dir(x) for x in dirs]
+    print '-' * 60
+    print('Training model:' + out_dir)
+    print '-' * 60
 
-    if validation_dir is None:  # Use globals
-        validation_data = os.path.join(
-            config.tf_record_base, config.tf_val_name)
-        val_meta_name = os.path.join(
-            config.tf_record_base,
-            re.split('.tfrecords', config.tf_val_name)[0] + '_meta.npz')
-        val_meta = np.load(val_meta_name)
-        print 'Using validation tfrecords: %s | %s images' % (
-            validation_data, len(val_meta['labels']))
-    elif validation_dir is False:
-        print 'Not using validation data.'
-    else:
-        validation_data = os.path.join(
-            validation_dir, config.tf_val_name)
-        val_meta_name = os.path.join(
-            validation_dir,
-            re.split('.tfrecords', config.tf_val_name)[0] + '_meta.npz')
-        val_meta = np.load(val_meta_name)
-
-    # Make output directories if they do not exist
-    dt_stamp = 'baseline_' +\
-        str(config.new_lr)[2:] + '_' + str(
-            len(train_meta['labels'])) + '_' + re.split(
-            '\.', str(datetime.now()))[0].\
-        replace(' ', '_').replace(':', '_').replace('-', '_')
-    config.train_checkpoint = os.path.join(
-        config.train_checkpoint, dt_stamp)  # timestamp this run
-    out_dir = os.path.join(config.results, dt_stamp)
-    dir_list = [
-        config.train_checkpoint, config.train_summaries,
-        config.results, out_dir]
-    [make_dir(d) for d in dir_list]
-
-    print '-'*60
-    print('Training model:' + dt_stamp)
-    print '-'*60
-
-    # Prepare data on CPU
+    # 4. Prepare data on CPU
+    neural_shape = list(neural_data.shape)
+    num_neurons = neural_shape[-1]
     with tf.device('/cpu:0'):
-        train_images, train_labels, train_heatmaps = inputs(
-            train_data, config.train_batch, config.image_size,
-            config.model_image_size[:2],
-            train=config.data_augmentations,
-            num_epochs=config.epochs,
-            return_heatmaps=True)
-        val_images, val_labels = inputs(
-            validation_data, config.validation_batch, config.image_size,
-            config.model_image_size[:2],
-            num_epochs=None,
-            return_heatmaps=False)
+        train_images = tf.placeholder(
+            dtype=dtype,
+            name='train_images',
+            shape=[config.train_batch_size] + config.img_shape)
+        train_neural = tf.placeholder(
+            dtype=dtype,
+            name='train_neural',
+            shape=[config.train_batch_size] + [num_neurons])
+        val_images = tf.placeholder(
+            dtype=dtype,
+            name='val_images',
+            shape=[config.val_batch_size] + config.img_shape)
+        val_neural = tf.placeholder(
+            dtype=dtype,
+            name='val_neural',
+            shape=[config.val_batch_size] + [num_neurons])
 
-    # Prepare model on GPU
+    # 5. Prepare model on GPU
     with tf.device('/gpu:0'):
         with tf.variable_scope('cnn') as scope:
             vgg = vgg16.Vgg16(
-                vgg16_npy_path=config.vgg16_weight_path,
-                fine_tune_layers=config.initialize_layers)
-            train_mode = tf.get_variable(name='training', initializer=True)
+                vgg16_npy_path=config.vgg16_weight_path)
+            train_mode = tf.get_variable(name='training', initializer=False)
             vgg.build(
                 train_images,
-                output_shape=config.output_shape,
+                output_shape=1000,  # hardcode
                 train_mode=train_mode,
-                batchnorm=config.batchnorm_layers)
+                final_layer=layer_name)
+
+            # Select a layer
+            activities = vgg[layer_name]
+
+            # Feature reduce with a 1x1 conv
+            if config.reduce_features is not None:
+                vgg, activities, reduce_weights = ff.pool_ff_interpreter(
+                    self=vgg,
+                    it_neuron_op='1x1conv',
+                    act=activities,
+                    it_name='feature_reduce',
+                    out_channels=config.reduce_features,
+                    aux=None)
+            else:
+                reduce_weights = None
+
+            # Add con-model if requested
+            if cm_type is not None and cm_type != 'none':
+                norms = normalizations.normalizations()
+                activities, cm_weights, _ = norms[cm_type](
+                    x=activities,
+                    r_in=rfs['r_in'],
+                    j_in=rfs['j_in'],
+                    timesteps=timesteps,
+                    lesions=config.lesions)
+            else:
+                cm_weights = None
+
+            # Create output layer for N-recording channels
+            activities = tf.nn.dropout(activities, 0.5)
+            vgg, output_activities, output_weights = ff.pool_ff_interpreter(
+                self=vgg,
+                it_neuron_op=output_type,
+                act=activities,
+                it_name='output',
+                out_channels=num_neurons,
+                aux=output_aux)
 
             # Prepare the loss function
-            loss = softmax_loss(vgg.fc8, train_labels)
+            loss, _ = loss_utils.loss_interpreter(
+                logits=output_activities,
+                labels=train_neural,
+                loss_type=config.loss_type)
 
-            # Add weight decay of fc6/7/8
-            if config.wd_penalty is not None:
-                loss = wd_loss(
-                    loss=loss,
-                    trainables=tf.trainable_variables(),
-                    config=config)
+            # Add contextual model WD
+            if config.reduce_features is not None and reduce_weights is not None:
+                loss += loss_utils.add_wd(
+                    weights=reduce_weights,
+                    wd_dict=config.wd_types)
+
+            # Add contextual model WD
+            if config.cm_wd_types is not None and cm_weights is not None:
+                loss += loss_utils.add_wd(
+                    weights=cm_weights,
+                    wd_dict=config.cm_wd_types)
+
+            # Add WD to output layer
+            if config.wd_types is not None:
+                loss += loss_utils.add_wd(
+                    weights=output_weights,
+                    wd_dict=config.wd_types)
 
             # Finetune the learning rates
-            train_op = finetune_learning(
-                loss,
-                trainables=tf.trainable_variables(),
-                config=config
-                )
+            train_op = loss_utils.optimizer_interpreter(
+                loss=loss,
+                lr=config.lr,
+                optimizer=config.optimizer)
 
-            train_accuracy = class_accuracy(
-                vgg.prob, train_labels)  # training accuracy
+            # Calculate metrics
+            train_accuracy = eval_metrics.metric_interpreter(
+                metric=config.metric,
+                pred=output_activities,
+                labels=train_neural)
 
             # Add summaries for debugging
             tf.summary.image('train images', train_images)
@@ -141,67 +192,155 @@ def train_vgg16(
             tf.summary.scalar("training accuracy", train_accuracy)
 
             # Setup validation op
-            if validation_data is not False:
-                scope.reuse_variables()
+            scope.reuse_variables()
 
-                # Validation graph is the same as training except no batchnorm
-                val_vgg = vgg16.Vgg16(
-                    vgg16_npy_path=config.vgg16_weight_path,
-                    fine_tune_layers=config.fine_tune_layers)
-                val_vgg.build(val_images, output_shape=config.output_shape)
+            # Validation graph is the same as training except no batchnorm
+            val_vgg = vgg16.Vgg16(
+                vgg16_npy_path=config.vgg16_weight_path)
+            val_vgg.build(
+                val_images,
+                output_shape=1000,
+                final_layer=layer_name)
 
-                # Calculate validation accuracy
-                val_accuracy = class_accuracy(val_vgg.prob, val_labels)
-                tf.summary.scalar("validation accuracy", val_accuracy)
+            # Select a layer
+            val_activities = val_vgg[layer_name]
+
+            # Add feature reduction if requested
+            if config.reduce_features is not None:
+                val_vgg, val_activities, _ = ff.pool_ff_interpreter(
+                    self=val_vgg,
+                    it_neuron_op='1x1conv',
+                    act=val_activities,
+                    it_name='feature_reduce',
+                    out_channels=config.reduce_features,
+                    aux=None)
+            else:
+                reduce_weights = None
+
+            # Add con-model if requested
+            if cm_type is not None and cm_type != 'none':
+                val_activities, _, _ = norms[cm_type](
+                    x=val_activities,
+                    r_in=rfs['r_in'],
+                    j_in=rfs['j_in'],
+                    timesteps=timesteps,
+                    lesions=config.lesions)
+
+            # Create output layer for N-recording channels
+            val_vgg, val_output_activities, _ = ff.pool_ff_interpreter(
+                self=val_vgg,
+                it_neuron_op=output_type,
+                act=val_activities,
+                it_name='output',
+                out_channels=num_neurons,
+                aux=output_aux)
+
+            # Prepare the loss function
+            val_loss, _ = loss_utils.loss_interpreter(
+                logits=val_output_activities,
+                labels=val_neural,
+                loss_type=config.loss_type)
+
+            # Calculate metrics
+            val_accuracy = eval_metrics.metric_interpreter(
+                metric=config.metric,
+                pred=val_output_activities,
+                labels=val_neural)
+            tf.summary.scalar('validation loss', val_loss)
+            tf.summary.scalar('validation accuracy', val_accuracy)
 
     # Set up summaries and saver
-    saver = tf.train.Saver(
-        tf.global_variables(), max_to_keep=config.keep_checkpoints)
+    saver = tf.train.Saver(tf.global_variables())
     summary_op = tf.summary.merge_all()
 
     # Initialize the graph
     sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
+
     # Need to initialize both of these if supplying num_epochs to inputs
-    sess.run(tf.group(tf.global_variables_initializer(),
-             tf.local_variables_initializer()))
+    sess.run(tf.global_variables_initializer())
     summary_dir = os.path.join(
-        config.train_summaries, dt_stamp)
+        config.summaries,
+        dt_stamp)
     summary_writer = tf.summary.FileWriter(summary_dir, sess.graph)
 
-    # Set up exemplar threading
-    coord = tf.train.Coordinator()
-    threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-
     # Start training loop
-    np.save(os.path.join(out_dir, 'training_config_file'), config)
-    training_loop(
-        config,
-        coord,
-        sess,
-        train_op,
-        summary_op,
-        summary_writer,
-        loss,
-        saver,
-        threads,
+    train_vars = {
+        'images': train_images,
+        'neural_data': train_neural,
+        'loss': loss,
+        'score': train_accuracy,
+        'train_op': train_op
+    }
+    if cm_weights is not None:
+        for k, v in cm_weights.iteritems():
+            train_vars[k] = v
+    val_vars = {
+        'images': val_images,
+        'neural_data': val_neural,
+        'loss': val_loss,
+        'score': val_accuracy,
+    }
+    extra_params = {
+        'cm_type': cm_type,
+        'layer_name': layer_name,
+        'output_type': output_type,
+        'project_name': project_name,
+        'model_type': model_type,
+        'lesions': config.lesions,
+        'timesteps': timesteps
+    }
+    np.savez(
+        os.path.join(out_dir, 'training_config_file'),
+        config=config,
+        extra_params=extra_params)
+    train_cv_out, val_cv_out, weights = training.training_loop(
+        config=config,
+        neural_data=neural_data,
+        images=images,
+        target_size=config.img_shape[:2],
+        sess=sess,
+        train_vars=train_vars,
+        val_vars=val_vars,
+        summary_op=summary_op,
+        summary_writer=summary_writer,
+        checkpoint_dir=checkpoint_dir,
+        summary_dir=summary_dir,
+        saver=saver)
+    np.savez(
         out_dir,
-        summary_dir,
-        validation_data,
-        val_accuracy,
-        train_accuracy,
-        hp_optim=hp_optim)
+        config=config,
+        extra_params=extra_params,
+        train_cv_out=train_cv_out,
+        val_cv_out=val_cv_out,
+        weight=weights)
 
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument(
-        "--train_dir", type=str, dest="train_dir",
-        default=None, help="Directory of training data tfrecords bin file.")
+        '--cm_type',
+        type=str,
+        dest='cm_type')
     parser.add_argument(
-        "--validation_dir", type=str, dest="validation_dir",
-        default=None, help="Directory of validation data tfrecords bin file.")
+        '--layer_name',
+        type=str,
+        dest='layer_name')
     parser.add_argument(
-        "--hp_optim", dest="hp_optim",
-        action='store_true', help="Turn this into a hp optimization worker.")
+        '--output_type',
+        type=str,
+        dest='output_type')
+    parser.add_argument(
+        '--project_name',
+        type=str,
+        dest='project_name')
+    parser.add_argument(
+        '--model_type',
+        type=str,
+        dest='model_type',
+        default='vgg16')
+    parser.add_argument(
+        '--timesteps',
+        type=int,
+        dest='timesteps')
     args = parser.parse_args()
-    train_vgg16(**vars(args))
+    extract_vgg_features(**vars(args))

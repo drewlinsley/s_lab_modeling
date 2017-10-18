@@ -2,6 +2,7 @@
 from utils import py_utils
 from layers.normalization_functions import contextual_vector
 from layers.normalization_functions import contextual_vector_separable
+from layers.normalization_functions import contextual_vector_separable_rand_init
 
 
 class normalizations(object):
@@ -112,3 +113,18 @@ class normalizations(object):
             strides=self.strides,
             padding=self.padding)
         return contextual_layer.build()
+
+    def contextual_vector_separable_rand_init(self, x, r_in, j_in, timesteps, lesions):
+        """Contextual model with separable convolutions."""
+        self.set_RFs(r_in=r_in, j_in=j_in)
+        contextual_layer = contextual_vector_separable_rand_init.ContextualCircuit(
+            X=x,
+            timesteps=timesteps,
+            lesions=lesions,
+            SRF=self.SRF,
+            SSN=self.SSN,
+            SSF=self.SSF,
+            strides=self.strides,
+            padding=self.padding)
+        return contextual_layer.build()
+

@@ -1,9 +1,9 @@
 """Training routine for TF."""
-import os
 import time
 import cv2
 import numpy as np
-from datetime import datetime
+import tensorflow as tf
+# from datetime import datetime
 
 
 def pad_im(img, crop_size):
@@ -94,6 +94,8 @@ def cv_interpret(X, y, cv):
         rep_val = obs / cv_val
         assert rep_val == np.round(rep_val),\
             'Choose a k-fold that is evenly divisible with %s.' % obs
+        assert cv_val * rep_val == obs,\
+            'Choose K that yields round number for %s' % obs
         cv_seed = np.eye(cv_val)
         folds = [
             np.expand_dims(x, -1).repeat(rep_val, axis=-1)
@@ -103,15 +105,16 @@ def cv_interpret(X, y, cv):
         train_len = np.round(obs * cv_val).astype(int)
         val_len = obs - train_len
         folds = [np.concatenate(
-            (np.zeros((train_len)),
-            np.ones((val_len))), axis=0)]
+            (
+                np.zeros((train_len)),
+                np.ones((val_len))), axis=0)]
     else:
         raise NotImplementedError
 
     # Prepare CV data
     out_folds = []
     for fold in folds:
-        fold = fold.squeeze()
+        fold = fold.reshape(-1)
         it_val = {}
         val_X = X[fold == 1]
         val_y = y[fold == 1]
@@ -143,10 +146,6 @@ def training_loop(
         summary_dir,
         saver):
     """Run a training loop."""
-    step, time_elapsed = 0, 0
-    train_losses, train_accs, timesteps = {}, {}, {}
-    val_losses, val_accs = {}, {}
-    start_time = time.time()
 
     # Prepare crossval
     cv_folds = cv_interpret(
@@ -160,7 +159,12 @@ def training_loop(
         val_data = fold['val']
         train_num_steps = len(train_data['y'])
         val_num_steps = len(val_data['y'])
-        fold_train_losses, fold_train_scores, fold_val_losses, fold_val_scores = {}, {}, {}, {}
+        fold_train_losses = {}
+        fold_train_scores = {}
+        fold_val_losses = {}
+        fold_val_scores = {}
+        step = 0
+        start_time = time.time()
         for epoch in range(config.num_epochs):
             print 'Starting epoch %s/%s of fold %s/%s' % (
                 epoch,
@@ -174,30 +178,38 @@ def training_loop(
             fold_val_scores[epoch] = []
             # Training loop
             while image_count < train_num_steps:
-                it_inds = np.random.permutation(train_num_steps)[:config.batch_size]
-                it_images = preprocess_images(train_data['X'][it_inds], target_size)
+                it_inds = np.random.permutation(
+                    train_num_steps)[:config.train_batch_size]
+                it_images = preprocess_images(
+                    train_data['X'][it_inds], target_size)
                 it_neural_data = train_data['y'][it_inds]
                 feed_dict = {
                     train_vars['images']: it_images,
-                    train_vars['neural_data']: it_neural_data     
+                    train_vars['neural_data']: it_neural_data
                 }
                 it_train_data = sess.run(
                     train_vars.values(),
                     feed_dict=feed_dict)
-                train_dict = {k: v for k, v in zip(train_vars.keys(), it_train_data)}
+                train_dict = {k: v for k, v in zip(
+                    train_vars.keys(), it_train_data)}
                 assert not np.any(np.isnan(train_dict['loss'])), 'NaN in loss.'
-                image_count += config.batch_size
+                image_count += config.train_batch_size
                 fold_train_losses[epoch] += [train_dict['loss']]
                 fold_train_scores[epoch] += [train_dict['score']]
                 duration = time.time() - start_time
-                print 'Training loss: %s, score: %s' % (
+                step += 1
+                print 'Training step: %s, duration: %s, loss: %s, score: %s' % (
+                    step,
+                    duration,
                     float(train_dict['loss']),
                     float(train_dict['score']))
             # Run validation after every epoch
             image_count = 0
             while image_count < val_num_steps:
-                it_inds = np.random.permutation(val_num_steps)[:config.batch_size]
-                it_images = preprocess_images(val_data['X'][it_inds], target_size)
+                it_inds = np.random.permutation(
+                    val_num_steps)[:config.val_batch_size]
+                it_images = preprocess_images(
+                    val_data['X'][it_inds], target_size)
                 it_neural_data = val_data['y'][it_inds]
                 feed_dict = {
                     val_vars['images']: it_images,
@@ -207,7 +219,7 @@ def training_loop(
                     val_vars.values(),
                     feed_dict=feed_dict)
                 val_dict = {k: v for k, v in zip(val_vars.keys(), it_val_data)}
-                image_count += config.batch_size
+                image_count += config.val_batch_size
                 fold_val_losses[epoch] += [val_dict['loss']]
                 fold_val_scores[epoch] += [val_dict['score']]
                 print 'Validation loss: %s, score: %s' % (
@@ -223,6 +235,8 @@ def training_loop(
                 'losses': fold_val_losses,
                 'scores': fold_val_scores
             }]
-        if config.cm_wd_types is not None:
-            weights += [{k: train_dict[k] for k in cm_wd_types.keys()}]
+        if 'contextual' in config.cm_type:
+            weights += [{k: train_dict[k] for k in config.cm_wd_types.keys()}]
+        # Initialize graph for crossvalidation
+        sess.run(tf.global_variables_initializer())
     return train_cv_out, val_cv_out, weights

@@ -24,14 +24,15 @@ class Config(object):
         self.img_shape = [224, 224, 3]
         self.lesions = [None]
         self.reduce_features = 100
-        self.num_epochs = 30
-        self.batch_size = 10
+        self.num_epochs = 100
+        self.train_batch_size = 45
+        self.val_batch_size = 10
         self.loss_type = 'pearson'
-        self.lr = 1e-3
+        self.lr = 5e-3
         self.optimizer = 'adam'
         self.metric = 'pearson'
         # self.cv = {
-        #     'k_fold': 1  # 8
+        #     'k_fold': 10  # 8
         # }
         self.cv = {
             'hold_out': 0.9  # 8
@@ -49,7 +50,7 @@ class Config(object):
             },
             't_t': {
                 'type': 'l1',
-                'strength': 0.01
+                'strength': 1
             }
         }
 
@@ -69,7 +70,7 @@ class Config(object):
             },
             'reduce_weights': {
                 'type': 'l1',
-                'strength': 0.1
+                'strength': 1
             }
         }
 
