@@ -1,6 +1,8 @@
 """Wrapper for normalization functions."""
 from utils import py_utils
 from layers.normalization_functions import contextual_vector
+from layers.normalization_functions import contextual_vector_zoneout
+from layers.normalization_functions import contextual_vector_vd
 from layers.normalization_functions import contextual_vector_separable
 from layers.normalization_functions import contextual_vector_separable_rand_init
 
@@ -128,3 +130,30 @@ class normalizations(object):
             padding=self.padding)
         return contextual_layer.build()
 
+    def contextual_vector_zoneout(self, x, r_in, j_in, timesteps, lesions):
+        """Contextual model with separable convolutions."""
+        self.set_RFs(r_in=r_in, j_in=j_in)
+        contextual_layer = contextual_vector_zoneout.ContextualCircuit(
+            X=x,
+            timesteps=timesteps,
+            lesions=lesions,
+            SRF=self.SRF,
+            SSN=self.SSN,
+            SSF=self.SSF,
+            strides=self.strides,
+            padding=self.padding)
+        return contextual_layer.build()
+
+    def contextual_vector_vd(self, x, r_in, j_in, timesteps, lesions):
+        """Contextual model with separable convolutions."""
+        self.set_RFs(r_in=r_in, j_in=j_in)
+        contextual_layer = contextual_vector_vd.ContextualCircuit(
+            X=x,
+            timesteps=timesteps,
+            lesions=lesions,
+            SRF=self.SRF,
+            SSN=self.SSN,
+            SSF=self.SSF,
+            strides=self.strides,
+            padding=self.padding)
+        return contextual_layer.build()
