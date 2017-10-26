@@ -12,7 +12,7 @@ from argparse import ArgumentParser
 
 
 def extract_vgg_features(
-        cm_type='contextual_vector',
+        cm_type='contextual_vector_vd',
         layer_name='pool3',
         output_type='sparse_pool',
         project_name=None,

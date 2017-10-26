@@ -8,8 +8,8 @@ class Config(object):
     def __init__(self, **kwargs):
         """Declare config attributes."""
         self.data_directory = '/media/data_cifs/image_datasets/'
-        self.results = '/media/data_cifs/contextual_circuit/results'
-        self.summaries = '/media/data_cifs/contextual_circuit/summaries'
+        self.results = '/media/data_cifs/contextual_circuit/sheinberg_results'
+        self.summaries = '/media/data_cifs/contextual_circuit/sheingberg_summaries'
         self.vgg16_weight_path = '/media/data_cifs/clicktionary/pretrained_weights/vgg16.npy'
         self.projects = {
             'sheinberg_data': os.path.join(

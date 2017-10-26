@@ -360,11 +360,11 @@ class ContextualCircuit(object):
 
         I-Integration:
         h_It = relu(xi x X - ((alpha x h_It-1) + mu) x A_U - ((beta x h_It-1) + nu) x A_T
-        h_It = f_It • h_It-1 + (1 - f_It) • h_It
+        h_It = f_It o h_It-1 + (1 - f_It) o h_It
 
         O-Integration:
         h_Ot = relu(zeta x h_It + gamma x A_P + delta x A_Q
-        h_Ot = f_Ot • h_Ot-1 + (1 - f_Ot) • h_Ot
+        h_Ot = f_Ot o h_Ot-1 + (1 - f_Ot) o h_Ot
 
         \end{aligned}
         \end{equation}
