@@ -88,7 +88,7 @@ class normalizations(object):
             r_in=r_in,
             fix_r_out=SSF_eRF)
 
-    def contextual_vector(self, x, r_in, j_in, timesteps, lesions):
+    def contextual_vector(self, x, r_in, j_in, timesteps, lesions, train):
         """Contextual model."""
         self.set_RFs(r_in=r_in, j_in=j_in)
         contextual_layer = contextual_vector.ContextualCircuit(
@@ -102,7 +102,7 @@ class normalizations(object):
             padding=self.padding)
         return contextual_layer.build()
 
-    def contextual_vector_separable(self, x, r_in, j_in, timesteps, lesions):
+    def contextual_vector_separable(self, x, r_in, j_in, timesteps, lesions, train):
         """Contextual model with separable convolutions."""
         self.set_RFs(r_in=r_in, j_in=j_in)
         contextual_layer = contextual_vector_separable.ContextualCircuit(
@@ -116,7 +116,7 @@ class normalizations(object):
             padding=self.padding)
         return contextual_layer.build()
 
-    def contextual_vector_separable_rand_init(self, x, r_in, j_in, timesteps, lesions):
+    def contextual_vector_separable_rand_init(self, x, r_in, j_in, timesteps, lesions, train):
         """Contextual model with separable convolutions."""
         self.set_RFs(r_in=r_in, j_in=j_in)
         contextual_layer = contextual_vector_separable_rand_init.ContextualCircuit(
@@ -130,7 +130,7 @@ class normalizations(object):
             padding=self.padding)
         return contextual_layer.build()
 
-    def contextual_vector_zoneout(self, x, r_in, j_in, timesteps, lesions):
+    def contextual_vector_zoneout(self, x, r_in, j_in, timesteps, lesions, train):
         """Contextual model with separable convolutions."""
         self.set_RFs(r_in=r_in, j_in=j_in)
         contextual_layer = contextual_vector_zoneout.ContextualCircuit(
@@ -141,10 +141,11 @@ class normalizations(object):
             SSN=self.SSN,
             SSF=self.SSF,
             strides=self.strides,
-            padding=self.padding)
+            padding=self.padding,
+            train=train)
         return contextual_layer.build()
 
-    def contextual_vector_vd(self, x, r_in, j_in, timesteps, lesions):
+    def contextual_vector_vd(self, x, r_in, j_in, timesteps, lesions, train):
         """Contextual model with separable convolutions."""
         self.set_RFs(r_in=r_in, j_in=j_in)
         contextual_layer = contextual_vector_vd.ContextualCircuit(
@@ -155,5 +156,7 @@ class normalizations(object):
             SSN=self.SSN,
             SSF=self.SSF,
             strides=self.strides,
-            padding=self.padding)
+            padding=self.padding,
+            train=train)
         return contextual_layer.build()
+

@@ -17,15 +17,19 @@ class ContextualCircuit(object):
             model_version='full',
             timesteps=1,
             lesions=None,
+            train=True,
             SRF=1,
             SSN=9,
             SSF=29,
             strides=[1, 1, 1, 1],
             padding='SAME',
             dtype=tf.float32,
+            dropout=0.5,
             return_weights=True):
 
         self.X = X
+        self.dropout = dropout
+        self.train = train
         self.n, self.h, self.w, self.k = [int(x) for x in X.get_shape()]
         self.model_version = model_version
         self.timesteps = timesteps
@@ -380,7 +384,6 @@ class ContextualCircuit(object):
             data=I,
             weight_key=self.weight_dict['I']['r']['weight']
         )
-        I_update = m * self.gate_nl(I_update_input + I_update_recurrent)
         O_update_input = self.conv_2d_op(
             data=self.X,
             weight_key=self.weight_dict['O']['f']['weight']
@@ -389,7 +392,14 @@ class ContextualCircuit(object):
             data=O,
             weight_key=self.weight_dict['O']['r']['weight']
         )
-        O_update = m * self.gate_nl(O_update_input + O_update_recurrent)
+
+        # Calculate gates and apply dropout
+        if self.train:
+            I_update = m * self.gate_nl(I_update_input + I_update_recurrent)
+            O_update = m * self.gate_nl(O_update_input + O_update_recurrent)
+        else:
+            I_update = (1 / self.dropout) * self.gate_nl(I_update_input + I_update_recurrent)
+            O_update = (1 / self.dropout) * self.gate_nl(O_update_input + O_update_recurrent)
 
         # Circuit
         I_summand = self.recurrent_nl(
@@ -429,7 +439,7 @@ class ContextualCircuit(object):
                 [1, 1, 1, self.k],
                 minval=0,
                 maxval=1.),
-                .5),  # variational dropout mask
+                self.dropout),  # variational dropout mask
             tf.float32)
         if reduce_memory:
             print 'Warning: Using FF version of the model.'

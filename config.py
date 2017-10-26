@@ -21,6 +21,8 @@ class Config(object):
         }
 
         # Model parameters
+        self.round_neural_data = True
+        self.max_spikes = 15
         self.img_shape = [224, 224, 3]
         self.lesions = [None]
         self.reduce_features = 100
@@ -28,7 +30,7 @@ class Config(object):
         self.train_batch_size = 45
         self.val_batch_size = 10
         self.loss_type = 'pearson'
-        self.lr = 5e-3
+        self.lr = 1e-3
         self.optimizer = 'adam'
         self.metric = 'pearson'
         # self.cv = {
@@ -42,11 +44,11 @@ class Config(object):
         self.cm_wd_types = {
             'q_t': {
                 'type': 'l1',
-                'strength': 0.1
+                'strength': 0.01
             },
             'p_t': {
                 'type': 'l1',
-                'strength': 0.1
+                'strength': 1
             },
             't_t': {
                 'type': 'l1',

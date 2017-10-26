@@ -78,17 +78,26 @@ def loss_interpreter(
         labels,
         loss_type,
         weights=None,
+        max_spikes=None,
         dataset_module=None):
     """Router for loss functions."""
     if loss_type is None:
         loss_type = dataset_module.default_loss_function
     if loss_type == 'cce':
+        "Return average CCE loss per channel."""
+        slabels = tf.split(labels, int(labels.get_shape()[-1]), axis=1)
+        import ipdb;ipdb.set_trace()
+        slabels = tf.split(logits, int(logits.get_shape()[-1]), axis=2)
         return cce(
             logits=logits,
             labels=labels,
             weights=weights)
     elif loss_type == 'l2':
         return l2(
+            logits=logits,
+            labels=labels)
+    elif loss_type == 'l1':
+        return l1(
             logits=logits,
             labels=labels)
     elif loss_type == 'log_loss':
@@ -220,3 +229,4 @@ def pearson_score(x1, x2, shape=None):
 
     corr = cov / (tf.multiply(x1_std, x2_std) + 1e-4)
     return corr
+

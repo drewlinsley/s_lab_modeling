@@ -34,6 +34,8 @@ def extract_vgg_features(
             project_path,
             '%s.npz' % project_name))
     neural_data = data['data_matrix']
+    if config.round_neural_data:
+        neural_data = np.round(neural_data)
     # TODO: across_session_data_matrix is subtracted version
     images = data['all_images'].astype(np.float32)
 
@@ -42,7 +44,7 @@ def extract_vgg_features(
     neural_data = neural_data[:, channel_check]
 
     # TODO: create AUX dict with each channel's X/Y
-    output_aux = None
+    output_aux = {'loss': config.loss_type}  # None
     rfs = rf_sizes.get_eRFs(model_type)[layer_name]
 
     # 3. Create a output directory if necessary and save a timestamped numpy.
@@ -135,7 +137,8 @@ def extract_vgg_features(
                     r_in=rfs['r_in'],
                     j_in=rfs['j_in'],
                     timesteps=timesteps,
-                    lesions=config.lesions)
+                    lesions=config.lesions,
+                    train=True)
             else:
                 cm_weights = None
 
@@ -224,7 +227,8 @@ def extract_vgg_features(
                     r_in=rfs['r_in'],
                     j_in=rfs['j_in'],
                     timesteps=timesteps,
-                    lesions=config.lesions)
+                    lesions=config.lesions,
+                    train=False)
 
             # Create output layer for N-recording channels
             val_vgg, val_output_activities, _ = ff.pool_ff_interpreter(
@@ -239,7 +243,8 @@ def extract_vgg_features(
             val_loss, _ = loss_utils.loss_interpreter(
                 logits=val_output_activities,
                 labels=val_neural,
-                loss_type=config.loss_type)
+                loss_type=config.loss_type,
+                max_spikes=config.max_spikes)
 
             # Calculate metrics
             val_accuracy = eval_metrics.metric_interpreter(
