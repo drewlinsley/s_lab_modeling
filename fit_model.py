@@ -212,7 +212,7 @@ def extract_vgg_features(
             if config.reduce_features is not None:
                 val_vgg, val_activities, _ = ff.pool_ff_interpreter(
                     self=val_vgg,
-                    it_neuron_op='1x1conv',
+                    it_neuron_op=config.reduce_type,
                     act=val_activities,
                     it_name='feature_reduce',
                     out_channels=config.reduce_features,
@@ -312,7 +312,7 @@ def extract_vgg_features(
         summary_dir=summary_dir,
         saver=saver)
     np.savez(
-        out_dir,
+        os.path.join(out_dir, 'data'),
         config=config,
         extra_params=extra_params,
         train_cv_out=train_cv_out,

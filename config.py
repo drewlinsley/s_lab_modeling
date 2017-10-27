@@ -25,11 +25,12 @@ class Config(object):
         self.max_spikes = 15
         self.img_shape = [224, 224, 3]
         self.lesions = [None]
-        self.reduce_features = 100
-        self.num_epochs = 100
+        self.reduce_features = 40
+        self.reduce_type = '1x1conv'  # svd or 1x1conv w/ regularization
+        self.num_epochs = 200
         self.train_batch_size = 45
         self.val_batch_size = 10
-        self.loss_type = 'pearson'
+        self.loss_type = 'l2'
         self.lr = 1e-3
         self.optimizer = 'adam'
         self.metric = 'pearson'
