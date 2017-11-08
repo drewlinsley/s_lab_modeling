@@ -43,6 +43,7 @@ class ContextualCircuit(object):
         self.t_shape = [self.SSF_ext, self.SSF_ext, self.k, self.k]
         self.i_shape = self.q_shape
         self.o_shape = self.q_shape
+        self.bias_shape = [1, 1, 1, self.k]
         self.u_nl = tf.identity
         self.t_nl = tf.identity
         self.q_nl = tf.identity
@@ -93,6 +94,7 @@ class ContextualCircuit(object):
             'I': {
                 'r': {  # Recurrent state
                     'weight': 'i_r',
+                    'bias': 'i_b',
                     'activity': 'I_r'
                 },
                 'f': {  # Recurrent state
@@ -103,6 +105,7 @@ class ContextualCircuit(object):
             'O': {
                 'r': {  # Recurrent state
                     'weight': 'o_r',
+                    'bias': 'o_b',
                     'activity': 'O_r'
                 },
                 'f': {  # Recurrent state
@@ -276,6 +279,13 @@ class ContextualCircuit(object):
                     shape=self.i_shape,
                     uniform=self.normal_initializer,
                     mask=None)))
+        setattr(
+            self,
+            self.weight_dict['I']['r']['bias'],
+            tf.get_variable(
+                name=self.weight_dict['I']['r']['bias'],
+                dtype=self.dtype,
+                initializer=tf.ones(self.bias_shape)))
 
         # Output
         setattr(
@@ -298,6 +308,13 @@ class ContextualCircuit(object):
                     shape=self.o_shape,
                     uniform=self.normal_initializer,
                     mask=None)))
+        setattr(
+            self,
+            self.weight_dict['O']['r']['bias'],
+            tf.get_variable(
+                name=self.weight_dict['O']['r']['bias'],
+                dtype=self.dtype,
+                initializer=tf.ones(self.bias_shape)))
 
         # Vector weights
         w_array = np.ones([1, 1, 1, self.k]).astype(np.float32)
@@ -377,19 +394,26 @@ class ContextualCircuit(object):
             weight_key=self.weight_dict['I']['f']['weight']
         )
         I_update_recurrent = self.conv_2d_op(
-            data=I,
+            data=O,
             weight_key=self.weight_dict['I']['r']['weight']
         )
-        I_update = self.gate_nl(I_update_input + I_update_recurrent)
+        I_update = self.gate_nl(
+            I_update_input + I_update_recurrent + self[
+                self.weight_dict['I']['r']['bias']])
+        I_update = self.gate_nl(
+            I_update_input + I_update_input + self[
+                self.weight_dict['I']['r']['bias']])
         O_update_input = self.conv_2d_op(
             data=self.X,
             weight_key=self.weight_dict['O']['f']['weight']
         )
         O_update_recurrent = self.conv_2d_op(
-            data=O,
+            data=I,
             weight_key=self.weight_dict['O']['r']['weight']
         )
-        O_update = self.gate_nl(O_update_input + O_update_recurrent)
+        O_update = self.gate_nl(
+            O_update_input + O_update_recurrent + self[
+                self.weight_dict['O']['r']['bias']])
 
         # Circuit
         I_summand = self.recurrent_nl(

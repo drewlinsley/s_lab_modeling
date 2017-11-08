@@ -46,6 +46,7 @@ def pool_ff_interpreter(
     elif it_neuron_op == 'pass':
         pass
     else:
+        import ipdb;ipdb.set_trace()
         raise NotImplementedError(it_neuron_op)
     return self, act, weights
 

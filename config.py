@@ -31,7 +31,7 @@ class Config(object):
         self.train_batch_size = 45
         self.val_batch_size = 10
         self.loss_type = 'l2'
-        self.lr = 1e-3
+        self.lr = 1e-4
         self.optimizer = 'adam'
         self.metric = 'pearson'
         # self.cv = {
